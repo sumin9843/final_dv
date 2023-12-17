@@ -1,0 +1,130 @@
+---
+title: "NYCTaxi"
+author: "최수민(202224584)"
+format: dashboard
+execute: 
+  enabled: true
+  cache: false
+  freeze: false
+---
+
+```{python}
+#| output: false
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+import json
+import requests
+import pickle
+df = pd.read_csv("https://raw.githubusercontent.com/guebin/DV2023/main/posts/NYCTaxi.csv").assign(
+    log_trip_duration = lambda df: np.log(df.trip_duration),
+    pickup_datetime = lambda df: df.pickup_datetime.apply(pd.to_datetime),
+    dropoff_datetime = lambda df: df.dropoff_datetime.apply(pd.to_datetime),
+    dist = lambda df: np.sqrt((df.pickup_latitude-df.dropoff_latitude)**2 + (df.pickup_longitude-df.dropoff_longitude)**2),
+    #---#
+    vendor_id = lambda df: df.vendor_id.map({1:'A',2:'B'})
+).assign(
+    speed = lambda df: df.dist / df.trip_duration,
+    pickup_hour = lambda df: df.pickup_datetime.dt.hour,
+    dropoff_hour = lambda df: df.dropoff_datetime.dt.hour,
+    dayofweek = lambda df: df.pickup_datetime.dt.dayofweek
+)
+df_small = df[::100].reset_index(drop=True)
+# 1-(1),(2),(3) 에 대응하는 plotly figure를 아래와 같은 이름으로 저장
+# fig1 = ...
+# fig2 = ...
+# fig3 = ...
+```
+
+# 기말고사1-(1),(2)
+
+```{python}
+#| title: 요일,시간에 따른 평균속력 시각화  
+def convert_to_korean_day(day_number):
+    days_mapping = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+    
+    if day_number in days_mapping:
+        return days_mapping[day_number]
+tidydata = df.assign(
+    dayofweek=lambda df: df.pickup_datetime.dt.dayofweek.apply(convert_to_korean_day)
+).pivot_table(
+    index='pickup_hour',
+    columns='dayofweek',
+    values='speed',
+    aggfunc='mean'
+).stack().reset_index().rename({0: 'speed_mean'}, axis=1)
+fig1=px.density_heatmap(
+    data_frame=tidydata,
+    x='pickup_hour',
+    y='dayofweek',
+    z='speed_mean',
+    nbinsx=24,
+    nbinsy=7,
+    height=300,
+    category_orders={"dayofweek": ['일', '토', '금', '목', '수', '화', '월']}
+)
+fig1.update_layout(coloraxis_colorbar=dict(
+    title='평균 속력'),
+    xaxis_title='pickup 시간',
+    yaxis_title='요일')
+fig1.show()
+```
+
+```{python}
+#| title: 요일,시간에 따른 평균이동거리 시각화    
+def convert_to_korean_day(day_number):
+    days_mapping = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+    
+    if day_number in days_mapping:
+        return days_mapping[day_number]
+tidydata = df.assign(
+    dayofweek=lambda df: df.pickup_datetime.dt.dayofweek.apply(convert_to_korean_day)
+).pivot_table(
+    index='pickup_hour',
+    columns='dayofweek',
+    values='dist',
+    aggfunc='mean'
+).stack().reset_index().rename({0: 'dist_mean'}, axis=1)
+fig2=px.density_heatmap(
+    data_frame=tidydata,
+    x='pickup_hour',
+    y='dayofweek',
+    z='dist_mean',
+    nbinsx=24,
+    nbinsy=7,
+    height=300,
+    category_orders={"dayofweek": ['일', '토', '금', '목', '수', '화', '월']},
+    range_color=[0.02, 0.08]
+)
+fig2.update_layout(coloraxis_colorbar=dict(
+    title='평균이동거리',
+    tickvals=[0.04,0.06, 0.08]),
+    xaxis_title='pickup 시간',
+    yaxis_title='요일')
+fig2.show()
+```
+
+# 기말고사1-(3)
+
+```{python}
+#| title: 속력별 경로 시각화
+df_small['speed_category'] = pd.qcut(df_small['speed'], q=[0, 0.25, 0.5, 0.75, 1], labels=['Q1', 'Q2', 'Q3', 'Q4'])
+
+fig3 = px.scatter_mapbox(
+    df_small,
+    lat='pickup_latitude',
+    lon='pickup_longitude',
+    color='speed_category',
+    size='speed',
+    color_discrete_sequence=px.colors.qualitative.Set1,
+    size_max=15, 
+    zoom=11
+)
+fig3.update_layout(mapbox_style="carto-positron")
+fig3.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+
+for i in range(len(fig3.data)):
+    fig3.data[i].update(legendgroup=df_small['speed_category'].iloc[i])
+fig3.show()
+```
